@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warehouse Temperature Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .dashboard {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .sensor-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .temperature {
+            font-size: 2em;
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+        .alert-panel {
+            background: #e74c3c;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .normal {
+            color: #27ae60;
+        }
+        .warning {
+            color: #f39c12;
+        }
+        .danger {
+            color: #e74c3c;
+        }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🏭 Warehouse Temperature Monitoring</h1>
+            <p>Real-time temperature tracking and alerts</p>
+        </div>
+
+        <div id="alertPanel" class="alert-panel" style="display: none;">
+            <h3>🚨 Active Alerts</h3>
+            <div id="alertsList"></div>
+        </div>
+
+        <div class="sensor-grid" id="sensorGrid">
+            <!-- Sensor cards will be populated by JavaScript -->
+        </div>
+
+        <div class="chart-container">
+            <h3>Temperature History (24 Hours)</h3>
+            <canvas id="temperatureChart" width="400" height="200"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let temperatureChart = null;
+        
+        function updateDashboard() {
+            fetch('/api/temperature/current')
+                .then(response => response.json())
+                .then(sensors => {
+                    updateSensorCards(sensors);
+                    updateChart(sensors);
+                });
+            
+            fetch('/api/alerts/active')
+                .then(response => response.json())
+                .then(alerts => {
+                    updateAlerts(alerts);
+                });
+        }
+
+        function updateSensorCards(sensors) {
+            const grid = document.getElementById('sensorGrid');
+            grid.innerHTML = '';
+            
+            sensors.forEach(sensor => {
+                const temp = sensor.temperature;
+                let statusClass = 'normal';
+                
+                if (temp > 25) statusClass = 'danger';
+                else if (temp < 5) statusClass = 'warning';
+                
+                const card = document.createElement('div');
+                card.className = 'sensor-card';
+                card.innerHTML = `
+                    <h3>${sensor.location}</h3>
+                    <p><strong>Sensor ID:</strong> ${sensor.sensor_id}</p>
+                    <div class="temperature ${statusClass}">${temp.toFixed(1)}°C</div>
+                    <p><strong>Last Update:</strong> ${new Date(sensor.timestamp).toLocaleString()}</p>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function updateAlerts(alerts) {
+            const alertPanel = document.getElementById('alertPanel');
+            const alertsList = document.getElementById('alertsList');
+            
+            if (alerts.length === 0) {
+                alertPanel.style.display = 'none';
+                return;
+            }
+            
+            alertPanel.style.display = 'block';
+            alertsList.innerHTML = '';
+            
+            alerts.forEach(alert => {
+                const alertItem = document.createElement('div');
+                alertItem.innerHTML = `
+                    <p><strong>${alert.sensor_id}</strong>: ${alert.alert_type} - ${alert.temperature.toFixed(1)}°C 
+                    at ${new Date(alert.timestamp).toLocaleString()}</p>
+                `;
+                alertsList.appendChild(alertItem);
+            });
+        }
+
+        function updateChart(sensors) {
+            // For simplicity, showing first sensor's history
+            if (sensors.length === 0) return;
+            
+            const sensorId = sensors[0].sensor_id;
+            
+            fetch(`/api/temperature/history/${sensorId}?hours=24`)
+                .then(response => response.json())
+                .then(history => {
+                    const ctx = document.getElementById('temperatureChart').getContext('2d');
+                    const labels = history.map(reading => 
+                        new Date(reading.timestamp).toLocaleTimeString()
+                    );
+                    const temperatures = history.map(reading => reading.temperature);
+                    
+                    if (temperatureChart) {
+                        temperatureChart.destroy();
+                    }
+                    
+                    temperatureChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: `Temperature - ${sensors[0].location}`,
+                                data: temperatures,
+                                borderColor: '#3498db',
+                                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                                tension: 0.4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            scales: {
+                                y: {
+                                    title: {
+                                        display: true,
+                                        text: 'Temperature (°C)'
+                                    }
+                                },
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Time'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+        }
+
+        // Update every 5 seconds
+        setInterval(updateDashboard, 5000);
+        updateDashboard(); // Initial load
+    </script>
+</body>
+</html>
